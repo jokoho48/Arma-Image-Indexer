@@ -12,15 +12,34 @@ namespace ConsoleApp1
     {
         private static string CMDConvert = $"E:\\SteamLibrary\\steamapps\\common\\Arma 3 Tools\\TexView2\\Pal2PacE.exe";
         private static string baseDir = "P:\\a3";
+        private static string outputDir = Environment.CurrentDirectory;
         private static Queue<string> startInfos = new Queue<string>();
         private static Process[] processes = new Process[Environment.ProcessorCount];
         private static string startTime = "";
         static void Main(string[] args)
         {
+            foreach (var arg in args)
+            {
+                if (arg.StartsWith("-WorkingDir="))
+                {
+                    baseDir = arg.TrimStart("-WorkingDir=".ToCharArray());
+                    continue;
+                }
+                if (arg.StartsWith("-Ouput="))
+                {
+                    outputDir = arg.TrimStart("-Ouput=".ToCharArray());
+                    continue;
+                }
+                if (arg.StartsWith("-Toolpath="))
+                {
+                    CMDConvert = arg.TrimStart("-Toolpath=".ToCharArray());
+                    continue;
+                }
+            }
             startTime = DateTime.Now.ToString("yyyy-MM-dd_HH-mm-ss");
             Thread t = new Thread(ThreadWork);
             t.Start();
-            using (StreamWriter output = new StreamWriter(Path.Combine(Environment.CurrentDirectory, "index.html")))
+            using (StreamWriter output = new StreamWriter(Path.Combine(outputDir, "index.html")))
             {
                 output.WriteLine("<html><head><title>Arma 3 Image Index</title><link rel=\"stylesheet\" type=\"text/css\" href=\"sty.css\"></head></body bg>");
                 CheckSubDirs(baseDir, output);
@@ -69,16 +88,17 @@ namespace ConsoleApp1
             {
                 CheckNewProcessRequired();
                 var filePNG = file.Replace("paa", "png");
-                filePNG = filePNG.Replace("P:\\a3", Environment.CurrentDirectory);
+                filePNG = filePNG.Replace(baseDir, outputDir);
+                var filePNGLarge = file.Replace(".paa", "_large.png");
+                filePNGLarge = filePNGLarge.Replace(baseDir, outputDir);
                 Directory.CreateDirectory(Path.GetDirectoryName(filePNG));
-                output.WriteLine(("<img src=\"" + filePNG.Replace(Environment.CurrentDirectory + "\\", "") + "\">\n").Replace("\\", "/"));
+
+                output.WriteLine(
+                    ($"<a href=\"{filePNGLarge.Replace(outputDir + "\\", "")}\"> <img src=\" { filePNG.Replace(outputDir + "\\", "") } \"></a>\n").Replace("\\", "/"));
                 if (File.Exists(filePNG))
                     continue;
-                if (Path.GetFileNameWithoutExtension(filePNG).EndsWith(""))
-                {
-
-                }
                 startInfos.Enqueue($"-size={CheckFileName(filePNG)} \"{file}\" \"{filePNG}\"");
+                startInfos.Enqueue($"\"{file}\" \"{filePNGLarge}\"");
             }
         }
 
@@ -113,6 +133,7 @@ namespace ConsoleApp1
             var name = Path.GetFileNameWithoutExtension(path).ToLower();
             if (
                 name.EndsWith("_smdi")
+                || name.EndsWith("_sdmi") // because BI fucking miss spells shit
                 || name.EndsWith("_nohq")
                 || name.EndsWith("_adshq")
                 || name.EndsWith("_ads")
@@ -129,6 +150,16 @@ namespace ConsoleApp1
                 || name.EndsWith("_sdm")
                 || name.EndsWith("_dxt1")
                 || name.StartsWith("surface_")
+                || name.EndsWith("_4444")
+                || name.EndsWith("_nopx")
+                || name.EndsWith("_gs")
+                || name.EndsWith("_mco")
+                || name.EndsWith("_gs")
+                || name.EndsWith("_4x4")
+                || name.EndsWith("_detail")
+                || name.EndsWith("_mlod")
+                || name.EndsWith("_ti")
+                || name.EndsWith("hohq")
                )
                 return 32;
             else if (name.EndsWith("_lca") || name.EndsWith("_lco") || name.EndsWith("_no"))
@@ -137,7 +168,7 @@ namespace ConsoleApp1
                 return 64;
             else if (name.EndsWith("_ca") || name.EndsWith("_sky"))
                 return 128;
-            LOG("FileFormat not Found: " + name);
+            LOG("File Format not Found Using Default: " + name + " Path: " + path);
             return 128;
         }
         static void LOG(string log)
@@ -145,7 +176,7 @@ namespace ConsoleApp1
             Console.WriteLine(log);
             using (StreamWriter file = new StreamWriter("log", true))
             {
-                file.WriteLine(DateTime.Now.ToString("HH-mm-ss") + log);
+                file.WriteLine(DateTime.Now.ToString("HH-mm-ss") + " " + log);
             }
         }
     }
