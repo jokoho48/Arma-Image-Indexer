@@ -10,7 +10,7 @@ namespace ConsoleApp1
 {
     class Program
     {
-        private static string CMDConvert = $"E:\\SteamLibrary\\steamapps\\common\\Arma 3 Tools\\TexView2\\Pal2PacE.exe";
+        private static string CMDConvert = "Pal2PacE.exe";
         private static string baseDir = "P:\\a3";
         private static string outputDir = Environment.CurrentDirectory;
         private static Queue<string> startInfos = new Queue<string>();
@@ -18,6 +18,7 @@ namespace ConsoleApp1
         private static string startTime = "";
         static void Main(string[] args)
         {
+
             foreach (var arg in args)
             {
                 if (arg.StartsWith("-WorkingDir="))
