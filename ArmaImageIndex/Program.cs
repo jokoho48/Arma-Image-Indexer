@@ -90,16 +90,16 @@ namespace ConsoleApp1
                 CheckNewProcessRequired();
                 var filePNG = file.Replace("paa", "png");
                 filePNG = filePNG.Replace(baseDir, outputDir);
-                var filePNGLarge = file.Replace(".paa", "_large.png");
-                filePNGLarge = filePNGLarge.Replace(baseDir, outputDir);
+                var filePNGPreview = file.Replace(".paa", "_preview.png");
+                filePNGPreview = filePNGPreview.Replace(baseDir, outputDir);
                 Directory.CreateDirectory(Path.GetDirectoryName(filePNG));
 
                 output.WriteLine(
-                    ($"<a href=\"{filePNGLarge.Replace(outputDir + "\\", "")}\"> <img src=\" { filePNG.Replace(outputDir + "\\", "") } \"></a>\n").Replace("\\", "/"));
+                    ($"<a href=\"{filePNG.Replace(outputDir + "\\", "")}\"> <img src=\" { filePNGPreview.Replace(outputDir + "\\", "") } \"></a>\n").Replace("\\", "/"));
                 if (File.Exists(filePNG))
                     continue;
-                startInfos.Enqueue($"-size={CheckFileName(filePNG)} \"{file}\" \"{filePNG}\"");
-                startInfos.Enqueue($"\"{file}\" \"{filePNGLarge}\"");
+                startInfos.Enqueue($"-size={CheckFileName(filePNG)} \"{file}\" \"{filePNGPreview}\"");
+                startInfos.Enqueue($"\"{file}\" \"{filePNG}\"");
             }
         }
 
