@@ -1,51 +1,55 @@
 ﻿using System;
 using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
-using System.IO;
 using System.Diagnostics;
+using System.IO;
+using System.Linq;
+using System.Net.Mime;
 using System.Threading;
+
 namespace ConsoleApp1
 {
-    class Program
+    internal class Program
     {
         private static string CMDConvert = "Pal2PacE.exe";
-        private static string baseDir = "P:\\a3";
+        private static string baseDir = "P:";
         private static string outputDir = Environment.CurrentDirectory;
-        private static Queue<string> startInfos = new Queue<string>();
-        private static Process[] processes = new Process[Environment.ProcessorCount];
-        private static string startTime = "";
-        static void Main(string[] args)
+        private static readonly Queue<string> startInfos = new Queue<string>();
+        private static readonly Process[] processes = new Process[Environment.ProcessorCount];
+
+        private static void Main(string[] args)
         {
 
-            foreach (var arg in args)
+            Console.WriteLine("Success");
+            foreach (string arg in args)
             {
-                if (arg.StartsWith("-WorkingDir="))
+                if (arg.StartsWith("-f="))
                 {
-                    baseDir = arg.TrimStart("-WorkingDir=".ToCharArray());
+                    baseDir = arg.TrimStart("-f=".ToCharArray());
                     continue;
                 }
-                if (arg.StartsWith("-Ouput="))
+
+                if (arg.StartsWith("-o="))
                 {
-                    outputDir = arg.TrimStart("-Ouput=".ToCharArray());
+                    outputDir = arg.TrimStart("-o=".ToCharArray());
                     continue;
                 }
-                if (arg.StartsWith("-Toolpath="))
+
+                if (arg.StartsWith("-t="))
                 {
-                    CMDConvert = arg.TrimStart("-Toolpath=".ToCharArray());
-                    continue;
+                    CMDConvert = arg.TrimStart("-t=".ToCharArray());
                 }
             }
-            startTime = DateTime.Now.ToString("yyyy-MM-dd_HH-mm-ss");
+
             Thread t = new Thread(ThreadWork);
             t.Start();
             using (StreamWriter output = new StreamWriter(Path.Combine(outputDir, "index.html")))
             {
-                output.WriteLine("<html><head><title>Arma 3 Image Index</title><link rel=\"stylesheet\" type=\"text/css\" href=\"sty.css\"></head></body bg>");
+                output.WriteLine(
+                    "<html><head><title>Arma 3 Image Index</title><link rel=\"stylesheet\" type=\"text/css\" href=\"sty.css\"></head></body bg>");
                 CheckSubDirs(baseDir, output);
                 output.WriteLine("</ body ></ html >");
             }
+
             Console.Beep();
             Thread.Sleep(10);
             Console.Beep();
@@ -53,13 +57,14 @@ namespace ConsoleApp1
             {
                 Thread.Sleep(10);
             }
+
             Console.Beep();
             Thread.Sleep(10);
             Console.Beep();
             Environment.Exit(0);
         }
 
-        static void ThreadWork()
+        private static void ThreadWork()
         {
             while (true)
             {
@@ -68,42 +73,54 @@ namespace ConsoleApp1
             }
         }
 
-        static void CheckSubDirs(string path, StreamWriter output)
+        private static void CheckSubDirs(string path, TextWriter output)
         {
             ConvertImage(path, output);
             CheckNewProcessRequired();
-            var folders = Directory.GetDirectories(path, "*", SearchOption.TopDirectoryOnly);
-            foreach (var folder in folders)
+            List<string> folders = Directory.GetDirectories(path, "*", SearchOption.TopDirectoryOnly).ToList();
+            folders.Sort();
+            foreach (string folder in folders)
             {
                 CheckSubDirs(folder, output);
             }
         }
 
-        static void ConvertImage(string path, StreamWriter output)
+        private static void ConvertImage(string path, TextWriter output)
         {
-            var files = Directory.GetFiles(path, "*.paa", SearchOption.TopDirectoryOnly);
-            if (files.Length == 0)
+            List<string> files = Directory.GetFiles(path, "*.paa", SearchOption.TopDirectoryOnly).ToList();
+            if (files.Count == 0)
+            {
                 return;
-            output.WriteLine($"<h2>  { path } </h2>");
-            foreach (var file in files)
+            }
+            files.Sort();
+
+            output.WriteLine($"<h2>  {path.Remove(0, 2)} </h2>");
+            foreach (string file in files)
             {
                 CheckNewProcessRequired();
-                var filePNG = file.Replace("paa", "png");
-                filePNG = filePNG.Replace(baseDir, outputDir);
-                var filePNGPreview = file.Replace(".paa", "_preview.png");
-                filePNGPreview = filePNGPreview.Replace(baseDir, outputDir);
-                Directory.CreateDirectory(Path.GetDirectoryName(filePNG));
+                string newFile = file.Replace(baseDir, "");
+                newFile = Path.Combine(outputDir, newFile);
+                string filePNG = newFile.Replace("paa", "png");
+                filePNG = filePNG.Replace(baseDir, "");
+                string filePNGPreview = newFile.Replace(".paa", "_preview.png");
+                filePNGPreview = filePNGPreview.Replace(baseDir, "");
+
+                Directory.CreateDirectory(Path.GetDirectoryName(filePNG) ?? throw new FileNotFoundException());
 
                 output.WriteLine(
-                    ($"<a href=\"{filePNG.Replace(outputDir + "\\", "")}\"> <img src=\" { filePNGPreview.Replace(outputDir + "\\", "") } \"></a>\n").Replace("\\", "/"));
+                    $"<a href=\"{filePNG.Replace(outputDir + "\\", "")}\"> <img title= \"{file.Remove(0, 2)}\" src=\" {filePNGPreview.Replace(outputDir + "\\", "")} \"></a>\n"
+                        .Replace("\\", "/"));
                 if (File.Exists(filePNG))
+                {
                     continue;
-                startInfos.Enqueue($"-size={CheckFileName(filePNG)} \"{file}\" \"{filePNGPreview}\"");
+                }
+
+                startInfos.Enqueue($"-size={GetPreviewSize(filePNG)} \"{file}\" \"{filePNGPreview}\"");
                 startInfos.Enqueue($"\"{file}\" \"{filePNG}\"");
             }
         }
 
-        static void CheckNewProcessRequired()
+        private static void CheckNewProcessRequired()
         {
             lock (startInfos)
             {
@@ -111,27 +128,32 @@ namespace ConsoleApp1
                 {
                     return;
                 }
+
                 for (int i = 0; i < processes.Length; i++)
                 {
                     if (processes[i] == null || processes[i].HasExited)
                     {
                         if (startInfos.Count == 0)
+                        {
                             return;
-                        ProcessStartInfo proc = new ProcessStartInfo
+                        }
+
+                        ProcessStartInfo process = new ProcessStartInfo
                         {
                             FileName = CMDConvert,
                             Arguments = startInfos.Dequeue(),
                             UseShellExecute = false,
                             CreateNoWindow = false
                         };
-                        processes[i] = Process.Start(proc);
+                        processes[i] = Process.Start(process);
                     }
                 }
             }
         }
-        static int CheckFileName(string path)
+
+        private static int GetPreviewSize(string path)
         {
-            var name = Path.GetFileNameWithoutExtension(path).ToLower();
+            string name = Path.GetFileNameWithoutExtension(path)?.ToLower() ?? throw new FileNotFoundException();
             if (
                 name.EndsWith("_smdi")
                 || name.EndsWith("_sdmi") // because BI fucking miss spells shit
@@ -161,24 +183,39 @@ namespace ConsoleApp1
                 || name.EndsWith("_mlod")
                 || name.EndsWith("_ti")
                 || name.EndsWith("hohq")
-               )
+            )
+            {
                 return 32;
-            else if (name.EndsWith("_lca") || name.EndsWith("_lco") || name.EndsWith("_no"))
+            }
+
+            if (name.EndsWith("_lca") || name.EndsWith("_lco") || name.EndsWith("_no"))
+            {
                 return 16;
-            else if (name.EndsWith("_co"))
+            }
+
+            if (name.EndsWith("_co"))
+            {
                 return 64;
-            else if (name.EndsWith("_ca") || name.EndsWith("_sky"))
+            }
+
+            if (name.EndsWith("_ca") || name.EndsWith("_sky"))
+            {
                 return 128;
+            }
+
             LOG("File Format not Found Using Default: " + name + " Path: " + path);
             return 128;
         }
-        static void LOG(string log)
+
+        private static void LOG(string log)
         {
             Console.WriteLine(log);
             using (StreamWriter file = new StreamWriter("log", true))
             {
-                file.WriteLine(DateTime.Now.ToString("HH-mm-ss") + " " + log);
+                file.WriteLine("{0:HH-mm-ss-fffffff} {1}", arg0: DateTime.Now, arg1: log);
             }
         }
+        
+
     }
 }
