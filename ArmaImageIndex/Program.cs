@@ -59,6 +59,7 @@ namespace ConsoleApp1
             Console.Beep();
             while (current != max)
             {
+                UpdateTitle();
                 Thread.Sleep(10);
             }
 
@@ -70,17 +71,20 @@ namespace ConsoleApp1
 
         private static void CheckSubDirs(string path, TextWriter output)
         {
-            ConvertImage(path, output);
+            ScanImagesFiles(path, output);
             List<string> folders = Directory.GetDirectories(path, "*", SearchOption.TopDirectoryOnly).ToList();
             folders.Sort();
             foreach (string folder in folders)
             {
                 CheckSubDirs(folder, output);
+                Thread.Sleep(1);
             }
         }
 
-        private static void ConvertImage(string path, TextWriter output)
+        
+        private static void ScanImagesFiles(string path, TextWriter output)
         {
+            UpdateTitle();
             List<string> files = Directory.GetFiles(path, "*.paa", SearchOption.TopDirectoryOnly).ToList();
             files.AddRange(Directory.GetFiles(path, "*.pac", SearchOption.TopDirectoryOnly).ToList());
             if (files.Count == 0)
@@ -183,6 +187,19 @@ namespace ConsoleApp1
             {
                 file.WriteLine("{0:HH-mm-ss-fffffff} {1}", DateTime.Now, log);
             }
+        }
+
+        private static void UpdateTitle()
+        {
+            ThreadPool.GetMaxThreads(out int maxWorker, out int maxIOC);
+            ThreadPool.GetMinThreads(out int minWorker, out int minIOC);
+            ThreadPool.GetAvailableThreads(out int availableWorker, out int availableIOC);
+            Console.Title =  "maxWorker: " + maxWorker +
+                             " minWorker: " + minWorker +
+                             " availableWorker: " + availableWorker +
+                             " maxIOC: " + maxIOC +
+                             " minIOC: " + minIOC +
+                             " availableIOC: " + availableIOC;
         }
 
 
