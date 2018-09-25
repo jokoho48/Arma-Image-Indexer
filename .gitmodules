@@ -1,0 +1,4 @@
+[submodule "bis-file-formats"]
+	path = bis-file-formats
+	url = https://github.com/jokoho48/bis-file-formats.git
+	branch = ImplementSpan

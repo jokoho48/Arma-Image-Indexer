@@ -1,24 +1,36 @@
-﻿using System;
+﻿#region
+
+using System;
 using System.Collections.Generic;
-using System.Diagnostics;
 using System.IO;
 using System.Linq;
-using System.Net.Mime;
 using System.Threading;
+using System.Windows.Media;
+using System.Windows.Media.Imaging;
+using BIS.PAA;
+
+#endregion
 
 namespace ConsoleApp1
 {
     internal class Program
     {
-        private static string CMDConvert = "Pal2PacE.exe";
         private static string baseDir = "P:";
         private static string outputDir = Environment.CurrentDirectory;
-        private static readonly Queue<string> startInfos = new Queue<string>();
-        private static readonly Process[] processes = new Process[Environment.ProcessorCount];
+        private static int max;
+        private static int current;
 
         private static void Main(string[] args)
         {
-
+            ThreadPool.GetMaxThreads(out int maxWorker, out int maxIOC);
+            ThreadPool.GetMinThreads(out int minWorker, out int minIOC);
+            ThreadPool.GetAvailableThreads(out int availableWorker, out int availableIOC);
+            Console.WriteLine("maxWorker: " + maxWorker);
+            Console.WriteLine("minWorker: " + minWorker);
+            Console.WriteLine("availableWorker: " + availableWorker);
+            Console.WriteLine("maxIOC: " + maxIOC);
+            Console.WriteLine("minIOC: " + minIOC);
+            Console.WriteLine("availableIOC: " + availableIOC);
             Console.WriteLine("Success");
             foreach (string arg in args)
             {
@@ -31,17 +43,9 @@ namespace ConsoleApp1
                 if (arg.StartsWith("-o="))
                 {
                     outputDir = arg.TrimStart("-o=".ToCharArray());
-                    continue;
-                }
-
-                if (arg.StartsWith("-t="))
-                {
-                    CMDConvert = arg.TrimStart("-t=".ToCharArray());
                 }
             }
 
-            Thread t = new Thread(ThreadWork);
-            t.Start();
             using (StreamWriter output = new StreamWriter(Path.Combine(outputDir, "index.html")))
             {
                 output.WriteLine(
@@ -53,7 +57,7 @@ namespace ConsoleApp1
             Console.Beep();
             Thread.Sleep(10);
             Console.Beep();
-            while (startInfos.Count != 0)
+            while (current != max)
             {
                 Thread.Sleep(10);
             }
@@ -64,19 +68,9 @@ namespace ConsoleApp1
             Environment.Exit(0);
         }
 
-        private static void ThreadWork()
-        {
-            while (true)
-            {
-                CheckNewProcessRequired();
-                Thread.Sleep(10);
-            }
-        }
-
         private static void CheckSubDirs(string path, TextWriter output)
         {
             ConvertImage(path, output);
-            CheckNewProcessRequired();
             List<string> folders = Directory.GetDirectories(path, "*", SearchOption.TopDirectoryOnly).ToList();
             folders.Sort();
             foreach (string folder in folders)
@@ -88,16 +82,17 @@ namespace ConsoleApp1
         private static void ConvertImage(string path, TextWriter output)
         {
             List<string> files = Directory.GetFiles(path, "*.paa", SearchOption.TopDirectoryOnly).ToList();
+            files.AddRange(Directory.GetFiles(path, "*.pac", SearchOption.TopDirectoryOnly).ToList());
             if (files.Count == 0)
             {
                 return;
             }
+
             files.Sort();
 
             output.WriteLine($"<h2>  {path.Remove(0, 2)} </h2>");
             foreach (string file in files)
             {
-                CheckNewProcessRequired();
                 string newFile = file.Replace(baseDir, "");
                 newFile = Path.Combine(outputDir, newFile);
                 string filePNG = newFile.Replace("paa", "png");
@@ -115,39 +110,13 @@ namespace ConsoleApp1
                     continue;
                 }
 
-                startInfos.Enqueue($"-size={GetPreviewSize(filePNG)} \"{file}\" \"{filePNGPreview}\"");
-                startInfos.Enqueue($"\"{file}\" \"{filePNG}\"");
-            }
-        }
-
-        private static void CheckNewProcessRequired()
-        {
-            lock (startInfos)
-            {
-                if (startInfos.Count == 0)
-                {
-                    return;
-                }
-
-                for (int i = 0; i < processes.Length; i++)
-                {
-                    if (processes[i] == null || processes[i].HasExited)
-                    {
-                        if (startInfos.Count == 0)
-                        {
-                            return;
-                        }
-
-                        ProcessStartInfo process = new ProcessStartInfo
-                        {
-                            FileName = CMDConvert,
-                            Arguments = startInfos.Dequeue(),
-                            UseShellExecute = false,
-                            CreateNoWindow = false
-                        };
-                        processes[i] = Process.Start(process);
-                    }
-                }
+                Tuple<string, string, int>
+                    data = new Tuple<string, string, int>(file, filePNG, GetPreviewSize(filePNG));
+                max++;
+                ThreadPool.QueueUserWorkItem(ProcessPAAConvert, data);
+                data = new Tuple<string, string, int>(file, filePNGPreview, -1);
+                max++;
+                ThreadPool.QueueUserWorkItem(ProcessPAAConvert, data);
             }
         }
 
@@ -212,10 +181,48 @@ namespace ConsoleApp1
             Console.WriteLine(log);
             using (StreamWriter file = new StreamWriter("log", true))
             {
-                file.WriteLine("{0:HH-mm-ss-fffffff} {1}", arg0: DateTime.Now, arg1: log);
+                file.WriteLine("{0:HH-mm-ss-fffffff} {1}", DateTime.Now, log);
             }
         }
-        
 
+
+        private static void ProcessPAAConvert(object input)
+        {
+            Tuple<string, string, int> data = (Tuple<string, string, int>) input;
+            string filePath = data.Item1;
+            //get raw pixel color data in ARGB32 format
+            string ext = Path.GetExtension(filePath);
+
+            bool isPAC = ext != null && ext.Equals(".pac", StringComparison.OrdinalIgnoreCase);
+            FileStream paaStream = File.OpenRead(filePath);
+            PAA paa = new PAA(paaStream, isPAC);
+            byte[] pixels = PAA.GetARGB32PixelData(paa, paaStream);
+
+            //We use WPF stuff here to create the actual image file, so this is Windows only
+
+            //create a BitmapSource 
+            List<Color> colors = paa.Palette.Colors.Select(c => Color.FromRgb(c.R8, c.G8, c.B8)).ToList();
+            BitmapPalette bitmapPalette = colors.Count > 0 ? new BitmapPalette(colors) : null;
+
+
+            BitmapSource bms = BitmapSource.Create(paa.Width, paa.Height, 300, 300, PixelFormats.Bgra32, bitmapPalette,
+                pixels, paa.Width * 4);
+
+
+            int width = Math.Min(bms.PixelWidth, bms.PixelWidth / bms.PixelHeight * data.Item3);
+            int height = Math.Min(bms.PixelHeight, data.Item3);
+            if (data.Item3 != -1 && height != bms.PixelHeight && width != bms.PixelWidth)
+            {
+                //bms = new TransformedBitmap(bms, new ScaleTransform(width, height));
+            }
+
+            //save as png
+            string pngFilePath = data.Item2;
+            FileStream pngStream = File.OpenWrite(pngFilePath);
+            PngBitmapEncoder pngEncoder = new PngBitmapEncoder();
+            pngEncoder.Frames.Add(BitmapFrame.Create(bms));
+            pngEncoder.Save(pngStream);
+            current++;
+        }
     }
 }
