@@ -11,15 +11,16 @@ using BIS.PAA;
 
 #endregion
 
-namespace ConsoleApp1
+namespace ArmaImageIndex
 {
-    internal class Program
+    internal static class Program
     {
         private static string baseDir = "P:";
         private static string outputDir = Environment.CurrentDirectory;
         private static int max;
         private static int current;
 
+        [STAThread]
         private static void Main(string[] args)
         {
             ThreadPool.GetMaxThreads(out int maxWorker, out int maxIOC);
