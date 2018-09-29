@@ -82,7 +82,7 @@ namespace ArmaImageIndex
             }
         }
 
-        
+
         private static void ScanImagesFiles(string path, TextWriter output)
         {
             UpdateTitle();
@@ -115,11 +115,7 @@ namespace ArmaImageIndex
                     continue;
                 }
 
-                Tuple<string, string, int>
-                    data = new Tuple<string, string, int>(file, filePNG, GetPreviewSize(filePNG));
-                max++;
-                ThreadPool.QueueUserWorkItem(ProcessPAAConvert, data);
-                data = new Tuple<string, string, int>(file, filePNGPreview, -1);
+                Tuple<string, string, string> data = new Tuple<string, string, string>(file, filePNG, filePNGPreview);
                 max++;
                 ThreadPool.QueueUserWorkItem(ProcessPAAConvert, data);
             }
@@ -195,18 +191,18 @@ namespace ArmaImageIndex
             ThreadPool.GetMaxThreads(out int maxWorker, out int maxIOC);
             ThreadPool.GetMinThreads(out int minWorker, out int minIOC);
             ThreadPool.GetAvailableThreads(out int availableWorker, out int availableIOC);
-            Console.Title =  "maxWorker: " + maxWorker +
-                             " minWorker: " + minWorker +
-                             " availableWorker: " + availableWorker +
-                             " maxIOC: " + maxIOC +
-                             " minIOC: " + minIOC +
-                             " availableIOC: " + availableIOC;
+            Console.Title = "maxWorker: " + maxWorker +
+                            " minWorker: " + minWorker +
+                            " availableWorker: " + availableWorker +
+                            " maxIOC: " + maxIOC +
+                            " minIOC: " + minIOC +
+                            " availableIOC: " + availableIOC;
         }
 
 
         private static void ProcessPAAConvert(object input)
         {
-            Tuple<string, string, int> data = (Tuple<string, string, int>) input;
+            Tuple<string, string, string> data = (Tuple<string, string, string>) input;
             string filePath = data.Item1;
             //get raw pixel color data in ARGB32 format
             string ext = Path.GetExtension(filePath);
@@ -226,20 +222,31 @@ namespace ArmaImageIndex
             BitmapSource bms = BitmapSource.Create(paa.Width, paa.Height, 300, 300, PixelFormats.Bgra32, bitmapPalette,
                 pixels, paa.Width * 4);
 
-
-            int width = Math.Min(bms.PixelWidth, bms.PixelWidth / bms.PixelHeight * data.Item3);
-            int height = Math.Min(bms.PixelHeight, data.Item3);
-            if (data.Item3 != -1 && height != bms.PixelHeight && width != bms.PixelWidth)
-            {
-                //bms = new TransformedBitmap(bms, new ScaleTransform(width, height));
-            }
-
             //save as png
             string pngFilePath = data.Item2;
             FileStream pngStream = File.OpenWrite(pngFilePath);
             PngBitmapEncoder pngEncoder = new PngBitmapEncoder();
             pngEncoder.Frames.Add(BitmapFrame.Create(bms));
             pngEncoder.Save(pngStream);
+
+            int size = GetPreviewSize(data.Item2);
+            int originalWidth = paa.Width;
+            int originalHeight = paa.Height;
+            float percentWidth = size / (float) originalWidth;
+            float percentHeight = size / (float) originalHeight;
+            float percent = percentHeight < percentWidth ? percentHeight : percentWidth;
+            int width = (int) (originalWidth * percent);
+            int height = (int) (originalHeight * percent);
+            Console.WriteLine(bms.IsFrozen);
+            if (height != bms.PixelHeight && width != bms.PixelWidth)
+            {
+                // @ TODO: i current have No Fucking Idea how to implement that system.
+            }
+
+            FileStream pngStreamPreview = File.OpenWrite(data.Item3);
+            PngBitmapEncoder pngEncoderPreview = new PngBitmapEncoder();
+            pngEncoderPreview.Frames.Add(BitmapFrame.Create(bms));
+            pngEncoderPreview.Save(pngStreamPreview);
             current++;
         }
     }
