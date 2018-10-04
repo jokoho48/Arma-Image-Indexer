@@ -5,6 +5,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Threading;
+using System.Threading.Tasks;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
 using BIS.PAA;
@@ -17,22 +18,22 @@ namespace ArmaImageIndex
     {
         private static string baseDir = "P:";
         private static string outputDir = Environment.CurrentDirectory;
-        private static int max;
-        private static int current;
+        private static int InQueue;
+        private static int done;
+        private static int runningTasks;
+
+        private static readonly Queue<Tuple<string, string, string>> WorkQueue =
+            new Queue<Tuple<string, string, string>>();
+
+        private static readonly List<Tuple<string, string, string>> ActiveQueue =
+            new List<Tuple<string, string, string>>();
+
+        private static bool useThreadPool;
+        private static readonly object LogThreadMutex = new object();
 
         [STAThread]
         private static void Main(string[] args)
         {
-            ThreadPool.GetMaxThreads(out int maxWorker, out int maxIOC);
-            ThreadPool.GetMinThreads(out int minWorker, out int minIOC);
-            ThreadPool.GetAvailableThreads(out int availableWorker, out int availableIOC);
-            Console.WriteLine("maxWorker: " + maxWorker);
-            Console.WriteLine("minWorker: " + minWorker);
-            Console.WriteLine("availableWorker: " + availableWorker);
-            Console.WriteLine("maxIOC: " + maxIOC);
-            Console.WriteLine("minIOC: " + minIOC);
-            Console.WriteLine("availableIOC: " + availableIOC);
-            Console.WriteLine("Success");
             foreach (string arg in args)
             {
                 if (arg.StartsWith("-f="))
@@ -45,7 +46,32 @@ namespace ArmaImageIndex
                 {
                     outputDir = arg.TrimStart("-o=".ToCharArray());
                 }
+
+                if (arg.StartsWith("-tp="))
+                {
+                    bool.TryParse(arg.TrimStart("-tp=".ToCharArray()), out useThreadPool);
+                }
             }
+
+            if (useThreadPool)
+            {
+                ThreadPool.GetMaxThreads(out int maxWorker, out int maxIOC);
+                ThreadPool.GetMinThreads(out int minWorker, out int minIOC);
+                ThreadPool.GetAvailableThreads(out int availableWorker, out int availableIOC);
+                LOG("maxWorker: " + maxWorker);
+                LOG("minWorker: " + minWorker);
+                LOG("availableWorker: " + availableWorker);
+                LOG("maxIOC: " + maxIOC);
+                LOG("minIOC: " + minIOC);
+                LOG("availableIOC: " + availableIOC);
+            }
+            else
+            {
+                Thread t = new Thread(WorkerThread);
+                t.Start();
+            }
+
+            LOG("Success");
 
             using (StreamWriter output = new StreamWriter(Path.Combine(outputDir, "index.html")))
             {
@@ -58,11 +84,23 @@ namespace ArmaImageIndex
             Console.Beep();
             Thread.Sleep(10);
             Console.Beep();
-            while (current != max)
+            if (useThreadPool)
             {
-                UpdateTitle();
-                Thread.Sleep(10);
+                while (done != InQueue)
+                {
+                    UpdateTitle();
+                    Thread.Sleep(10);
+                }
             }
+            else
+            {
+                while (ActiveQueue.Count != 0 && WorkQueue.Count != 0)
+                {
+                    UpdateTitle();
+                    Thread.Sleep(10);
+                }
+            }
+
 
             Console.Beep();
             Thread.Sleep(10);
@@ -73,12 +111,16 @@ namespace ArmaImageIndex
         private static void CheckSubDirs(string path, TextWriter output)
         {
             ScanImagesFiles(path, output);
+            LOG("Folder Found: " + path);
             List<string> folders = Directory.GetDirectories(path, "*", SearchOption.TopDirectoryOnly).ToList();
             folders.Sort();
             foreach (string folder in folders)
             {
                 CheckSubDirs(folder, output);
-                Thread.Sleep(1);
+                if (useThreadPool)
+                {
+                    Thread.Sleep(1);
+                }
             }
         }
 
@@ -115,9 +157,21 @@ namespace ArmaImageIndex
                     continue;
                 }
 
+                LOG("File Found: " + file);
                 Tuple<string, string, string> data = new Tuple<string, string, string>(file, filePNG, filePNGPreview);
-                max++;
-                ThreadPool.QueueUserWorkItem(ProcessPAAConvert, data);
+
+                InQueue++;
+                if (useThreadPool)
+                {
+                    ThreadPool.QueueUserWorkItem(ProcessPAAConvert, data);
+                }
+                else
+                {
+                    lock (WorkQueue)
+                    {
+                        WorkQueue.Enqueue(data);
+                    }
+                }
             }
         }
 
@@ -180,30 +234,48 @@ namespace ArmaImageIndex
         private static void LOG(string log)
         {
             Console.WriteLine(log);
-            using (StreamWriter file = new StreamWriter("log", true))
+            lock (LogThreadMutex)
             {
-                file.WriteLine("{0:HH-mm-ss-fffffff} {1}", DateTime.Now, log);
+                using (StreamWriter file = new StreamWriter("log", true))
+                {
+                    file.WriteLine("{0:HH-mm-ss-fffffff} {1}", DateTime.Now, log);
+                }
             }
         }
 
         private static void UpdateTitle()
         {
-            ThreadPool.GetMaxThreads(out int maxWorker, out int maxIOC);
-            ThreadPool.GetMinThreads(out int minWorker, out int minIOC);
-            ThreadPool.GetAvailableThreads(out int availableWorker, out int availableIOC);
-            Console.Title = "maxWorker: " + maxWorker +
-                            " minWorker: " + minWorker +
-                            " availableWorker: " + availableWorker +
-                            " maxIOC: " + maxIOC +
-                            " minIOC: " + minIOC +
-                            " availableIOC: " + availableIOC;
+            if (useThreadPool)
+            {
+                ThreadPool.GetMaxThreads(out int maxWorker, out int maxIOC);
+                ThreadPool.GetMinThreads(out int minWorker, out int minIOC);
+                ThreadPool.GetAvailableThreads(out int availableWorker, out int availableIOC);
+                Console.Title = "maxWorker: " + maxWorker +
+                                " minWorker: " + minWorker +
+                                " availableWorker: " + availableWorker +
+                                " maxIOC: " + maxIOC +
+                                " minIOC: " + minIOC +
+                                " availableIOC: " + availableIOC +
+                                " In Queue: " + InQueue +
+                                " Done: " + done + " Running Tasks: "+ runningTasks;
+            }
+            else
+            {
+                Console.Title = "WorkQueue: " + WorkQueue.Count +
+                                " ActiveQueue: " + ActiveQueue.Count +
+                                " In Queue: " + InQueue +
+                                " Done: " + done +
+                                " Running Tasks: "+ runningTasks;
+            }
         }
-
 
         private static void ProcessPAAConvert(object input)
         {
+            runningTasks++;
+            UpdateTitle();
             Tuple<string, string, string> data = (Tuple<string, string, string>) input;
             string filePath = data.Item1;
+            LOG("Process File: " + filePath);
             //get raw pixel color data in ARGB32 format
             string ext = Path.GetExtension(filePath);
 
@@ -223,8 +295,7 @@ namespace ArmaImageIndex
                 pixels, paa.Width * 4);
 
             //save as png
-            string pngFilePath = data.Item2;
-            FileStream pngStream = File.OpenWrite(pngFilePath);
+            FileStream pngStream = File.OpenWrite(data.Item2);
             PngBitmapEncoder pngEncoder = new PngBitmapEncoder();
             pngEncoder.Frames.Add(BitmapFrame.Create(bms));
             pngEncoder.Save(pngStream);
@@ -237,17 +308,38 @@ namespace ArmaImageIndex
             float percent = percentHeight < percentWidth ? percentHeight : percentWidth;
             int width = (int) (originalWidth * percent);
             int height = (int) (originalHeight * percent);
-            Console.WriteLine(bms.IsFrozen);
             if (height != bms.PixelHeight && width != bms.PixelWidth)
             {
-                // @ TODO: i current have No Fucking Idea how to implement that system.
+                // @ TODO: i done have No Fucking Idea how to implement that system.
             }
 
             FileStream pngStreamPreview = File.OpenWrite(data.Item3);
             PngBitmapEncoder pngEncoderPreview = new PngBitmapEncoder();
             pngEncoderPreview.Frames.Add(BitmapFrame.Create(bms));
             pngEncoderPreview.Save(pngStreamPreview);
-            current++;
+            GC.Collect();
+            done++;
+            runningTasks--;
+            UpdateTitle();
+            LOG("Processing Done: " + filePath);
+        }
+
+        private static void WorkerThread()
+        {
+            while (true)
+            {
+                if (WorkQueue.Count == 0) continue;
+
+                lock (WorkQueue)
+                {
+                    ActiveQueue.AddRange(WorkQueue);
+                    WorkQueue.Clear();
+                }
+                Parallel.ForEach(ActiveQueue, ProcessPAAConvert);
+                GC.Collect();
+                ActiveQueue.Clear();
+                Thread.Sleep(10);
+            }
         }
     }
 }
