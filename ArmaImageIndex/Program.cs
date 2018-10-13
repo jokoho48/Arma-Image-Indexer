@@ -307,9 +307,8 @@ namespace ArmaImageIndex
             FileStream paaStream = File.OpenRead(filePath);
             PAA paa = new PAA(paaStream, isPAC);
             byte[] pixels = PAA.GetARGB32PixelData(paa, paaStream);
-
             //We use WPF stuff here to create the actual image file, so this is Windows only
-
+            
             //create a BitmapSource
             List<Color> colors = paa.Palette.Colors.Select(c => Color.FromRgb(c.R8, c.G8, c.B8)).ToList();
             BitmapPalette bitmapPalette = colors.Count > 0 ? new BitmapPalette(colors) : null;
@@ -343,7 +342,13 @@ namespace ArmaImageIndex
 
             pngEncoderPreview.Frames.Add(bmf);
             pngEncoderPreview.Save(pngStreamPreview);
+
+            // Memory Cleanup
+            paaStream.Dispose();
+            pngStream.Dispose();
+            pngStreamPreview.Dispose();
             GC.Collect();
+
             done++;
             runningTasks--;
             UpdateTitle();
