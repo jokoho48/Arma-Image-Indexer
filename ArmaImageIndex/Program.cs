@@ -28,7 +28,7 @@ namespace ArmaImageIndex
         private static readonly List<Tuple<string, string, string>> ActiveQueue =
             new List<Tuple<string, string, string>>();
 
-        private static bool useThreadPool;
+        private static Method processingMethod = Method.Parallel;
         private static readonly object LogThreadMutex = new object();
 
         [STAThread]
@@ -47,13 +47,31 @@ namespace ArmaImageIndex
                     outputDir = arg.TrimStart("-o=".ToCharArray());
                 }
 
-                if (arg.StartsWith("-tp="))
+                if (arg.StartsWith("-method="))
                 {
-                    bool.TryParse(arg.TrimStart("-tp=".ToCharArray()), out useThreadPool);
+                    switch (arg.TrimStart("-method=".ToCharArray()).ToLower())
+                    {
+                        case "parallel":
+                        case "p":
+                            processingMethod = Method.Parallel;
+                            break;
+
+                        case "threadpool":
+                        case "thread pool":
+                        case "tp":
+                            processingMethod = Method.ThreadPool;
+                            break;
+
+                        case "s":
+                        case "sync":
+                        case "Synchronise":
+                            processingMethod = Method.Synchronise;
+                            break;
+                    }
                 }
             }
 
-            if (useThreadPool)
+            if (processingMethod == Method.ThreadPool)
             {
                 ThreadPool.GetMaxThreads(out int maxWorker, out int maxIOC);
                 ThreadPool.GetMinThreads(out int minWorker, out int minIOC);
@@ -84,7 +102,7 @@ namespace ArmaImageIndex
             Console.Beep();
             Thread.Sleep(10);
             Console.Beep();
-            if (useThreadPool)
+            if (processingMethod == Method.ThreadPool)
             {
                 while (done != InQueue)
                 {
@@ -92,7 +110,7 @@ namespace ArmaImageIndex
                     Thread.Sleep(10);
                 }
             }
-            else
+            else if (processingMethod == Method.Parallel)
             {
                 while (ActiveQueue.Count != 0 && WorkQueue.Count != 0)
                 {
@@ -100,7 +118,6 @@ namespace ArmaImageIndex
                     Thread.Sleep(10);
                 }
             }
-
 
             Console.Beep();
             Thread.Sleep(10);
@@ -117,13 +134,12 @@ namespace ArmaImageIndex
             foreach (string folder in folders)
             {
                 CheckSubDirs(folder, output);
-                if (useThreadPool)
+                if (processingMethod == Method.ThreadPool)
                 {
                     Thread.Sleep(1);
                 }
             }
         }
-
 
         private static void ScanImagesFiles(string path, TextWriter output)
         {
@@ -161,16 +177,20 @@ namespace ArmaImageIndex
                 Tuple<string, string, string> data = new Tuple<string, string, string>(file, filePNG, filePNGPreview);
 
                 InQueue++;
-                if (useThreadPool)
+                if (processingMethod == Method.ThreadPool)
                 {
                     ThreadPool.QueueUserWorkItem(ProcessPAAConvert, data);
                 }
-                else
+                else if (processingMethod == Method.Parallel)
                 {
                     lock (WorkQueue)
                     {
                         WorkQueue.Enqueue(data);
                     }
+                }
+                else
+                {
+                    ProcessPAAConvert(data);
                 }
             }
         }
@@ -245,7 +265,7 @@ namespace ArmaImageIndex
 
         private static void UpdateTitle()
         {
-            if (useThreadPool)
+            if (processingMethod == Method.ThreadPool)
             {
                 ThreadPool.GetMaxThreads(out int maxWorker, out int maxIOC);
                 ThreadPool.GetMinThreads(out int minWorker, out int minIOC);
@@ -257,7 +277,7 @@ namespace ArmaImageIndex
                                 " minIOC: " + minIOC +
                                 " availableIOC: " + availableIOC +
                                 " In Queue: " + InQueue +
-                                " Done: " + done + " Running Tasks: "+ runningTasks;
+                                " Done: " + done + " Running Tasks: " + runningTasks;
             }
             else
             {
@@ -265,7 +285,7 @@ namespace ArmaImageIndex
                                 " ActiveQueue: " + ActiveQueue.Count +
                                 " In Queue: " + InQueue +
                                 " Done: " + done +
-                                " Running Tasks: "+ runningTasks;
+                                " Running Tasks: " + runningTasks;
             }
         }
 
@@ -286,10 +306,9 @@ namespace ArmaImageIndex
 
             //We use WPF stuff here to create the actual image file, so this is Windows only
 
-            //create a BitmapSource 
+            //create a BitmapSource
             List<Color> colors = paa.Palette.Colors.Select(c => Color.FromRgb(c.R8, c.G8, c.B8)).ToList();
             BitmapPalette bitmapPalette = colors.Count > 0 ? new BitmapPalette(colors) : null;
-
 
             BitmapSource bms = BitmapSource.Create(paa.Width, paa.Height, 300, 300, PixelFormats.Bgra32, bitmapPalette,
                 pixels, paa.Width * 4);
@@ -308,14 +327,17 @@ namespace ArmaImageIndex
             float percent = percentHeight < percentWidth ? percentHeight : percentWidth;
             int width = (int) (originalWidth * percent);
             int height = (int) (originalHeight * percent);
-            if (height != bms.PixelHeight && width != bms.PixelWidth)
-            {
-                // @ TODO: i done have No Fucking Idea how to implement that system.
-            }
 
             FileStream pngStreamPreview = File.OpenWrite(data.Item3);
             PngBitmapEncoder pngEncoderPreview = new PngBitmapEncoder();
-            pngEncoderPreview.Frames.Add(BitmapFrame.Create(bms));
+            BitmapFrame bmf = BitmapFrame.Create(bms);
+
+            if (height != bms.PixelHeight && width != bms.PixelWidth)
+            {
+                bmf = FastResize(bmf, width, height);
+            }
+
+            pngEncoderPreview.Frames.Add(bmf);
             pngEncoderPreview.Save(pngStreamPreview);
             GC.Collect();
             done++;
@@ -335,11 +357,26 @@ namespace ArmaImageIndex
                     ActiveQueue.AddRange(WorkQueue);
                     WorkQueue.Clear();
                 }
+
                 Parallel.ForEach(ActiveQueue, ProcessPAAConvert);
                 GC.Collect();
                 ActiveQueue.Clear();
                 Thread.Sleep(10);
             }
+        }
+
+        private static BitmapFrame FastResize(BitmapFrame bfPhoto, int nWidth, int nHeight)
+        {
+            TransformedBitmap tbBitmap = new TransformedBitmap(bfPhoto,
+                new ScaleTransform(nWidth / bfPhoto.Width, nHeight / bfPhoto.Height, 0, 0));
+            return BitmapFrame.Create(tbBitmap);
+        }
+
+        private enum Method
+        {
+            Parallel,
+            ThreadPool,
+            Synchronise
         }
     }
 }
