@@ -21,14 +21,14 @@ namespace ArmaImageIndex
         private static int InQueue;
         private static int done;
         private static int runningTasks;
-
+        private static int alreadyFound;
         private static readonly Queue<Tuple<string, string, string>> WorkQueue =
             new Queue<Tuple<string, string, string>>();
 
         private static readonly List<Tuple<string, string, string>> ActiveQueue =
             new List<Tuple<string, string, string>>();
 
-        private static Method processingMethod = Method.Parallel;
+        private static Method processingMethod = Method.ThreadPool;
         private static readonly object LogThreadMutex = new object();
 
         [STAThread]
@@ -170,6 +170,7 @@ namespace ArmaImageIndex
                         .Replace("\\", "/"));
                 if (File.Exists(filePNG))
                 {
+                    alreadyFound++;
                     continue;
                 }
 
@@ -277,7 +278,9 @@ namespace ArmaImageIndex
                                 " minIOC: " + minIOC +
                                 " availableIOC: " + availableIOC +
                                 " In Queue: " + InQueue +
-                                " Done: " + done + " Running Tasks: " + runningTasks;
+                                " Done: " + done +
+                                " Running Tasks: " + runningTasks +
+                                " Already Finished: " + alreadyFound;;
             }
             else
             {
@@ -285,7 +288,8 @@ namespace ArmaImageIndex
                                 " ActiveQueue: " + ActiveQueue.Count +
                                 " In Queue: " + InQueue +
                                 " Done: " + done +
-                                " Running Tasks: " + runningTasks;
+                                " Running Tasks: " + runningTasks +
+                                " Already Finished: " + alreadyFound;
             }
         }
 
