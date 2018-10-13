@@ -28,7 +28,7 @@ namespace ArmaImageIndex
         private static readonly List<Tuple<string, string, string>> ActiveQueue =
             new List<Tuple<string, string, string>>();
 
-        private static Method processingMethod = Method.ThreadPool;
+        private static Method processingMethod = Method.Parallel;
         private static readonly object LogThreadMutex = new object();
 
         [STAThread]
