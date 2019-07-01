@@ -91,12 +91,6 @@
     <PackageReference Include="Microsoft.CodeDom.Providers.DotNetCompilerPlatform">
       <Version>2.0.1</Version>
     </PackageReference>
-    <PackageReference Include="SixLabors.ImageSharp">
-      <Version>1.0.0-beta0006</Version>
-    </PackageReference>
-    <PackageReference Include="SixLabors.ImageSharp.Drawing">
-      <Version>1.0.0-beta0006</Version>
-    </PackageReference>
     <PackageReference Include="System.Globalization">
       <Version>4.3.0</Version>
     </PackageReference>
@@ -150,6 +144,14 @@
     <ProjectReference Include="..\bis-file-formats\BIS.WRP\BIS.WRP.csproj">
       <Project>{6b9219c3-42a6-4715-8f1d-40d49e094ea8}</Project>
       <Name>BIS.WRP</Name>
+    </ProjectReference>
+    <ProjectReference Include="..\ImageSharp\src\ImageSharp.Drawing\ImageSharp.Drawing.csproj">
+      <Project>{84b4ef84-ccb8-4f16-b4e9-bd3ec3ba1f8f}</Project>
+      <Name>ImageSharp.Drawing</Name>
+    </ProjectReference>
+    <ProjectReference Include="..\ImageSharp\src\ImageSharp\ImageSharp.csproj">
+      <Project>{be087293-28bc-4c82-90a2-838a4c8adae9}</Project>
+      <Name>ImageSharp</Name>
     </ProjectReference>
     <ProjectReference Include="..\SwiftPbo\SwiftPbo\SwiftPbo.csproj">
       <Project>{8688a0f5-a404-4707-b98b-563213964e72}</Project>

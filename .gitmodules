@@ -6,3 +6,6 @@
 	path = SwiftPbo
 	url = https://github.com/jokoho48/SwiftPbo.git
 	branch = master
+[submodule "ImageSharp"]
+	path = ImageSharp
+	url = https://github.com/SixLabors/ImageSharp.git
