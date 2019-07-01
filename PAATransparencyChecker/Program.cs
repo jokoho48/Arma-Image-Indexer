@@ -1,19 +1,20 @@
-﻿using System;
+﻿#region
+
+using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
-using System.Text;
-using System.Threading;
-using System.Threading.Tasks;
-using BIS.Core;
 using BIS.PAA;
+
+#endregion
 
 namespace PAATransparencyChecker
 {
-    class Program
+    internal class Program
     {
-        private static string baseDir = "P://a3";
+        private static readonly string baseDir = "P://a3";
         private static readonly Dictionary<string, bool> types = new Dictionary<string, bool>();
+
         private static void Main(string[] args)
         {
             CheckSubDirs(baseDir);

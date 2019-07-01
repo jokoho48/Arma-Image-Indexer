@@ -1,4 +1,5 @@
-﻿using BIS.PAA;
+﻿#region
+
 using System;
 using System.Collections.Generic;
 using System.IO;
@@ -7,6 +8,9 @@ using System.Threading;
 using System.Threading.Tasks;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
+using BIS.PAA;
+
+#endregion
 
 namespace ArmaImageIndex
 {
@@ -33,29 +37,41 @@ namespace ArmaImageIndex
         internal static int done;
         internal static int runningTasks;
         internal static int alreadyFound;
-        private static bool isDoneDir = false;
-        private static bool isDoneConvert = false;
+        private static bool isDoneDir;
+        private static bool isDoneConvert;
 
         internal static void StartConverting()
         {
             CheckSubDirs(Program.baseDir);
             isDoneDir = true;
-            if (Program.processingMethod == Program.Method.ThreadPool)
+            switch (Program.processingMethod)
             {
-                while (done != InQueue)
+                case Program.Method.ThreadPool:
                 {
-                    UpdateTitle();
-                    Thread.Sleep(10);
+                    while (done != InQueue)
+                    {
+                        UpdateTitle();
+                        Thread.Sleep(10);
+                    }
+
+                    break;
                 }
-            }
-            else if (Program.processingMethod == Program.Method.Parallel)
-            {
-                while (ActiveQueue.Count != 0 && WorkQueue.Count != 0)
+                case Program.Method.Parallel:
                 {
-                    UpdateTitle();
-                    Thread.Sleep(10);
+                    while (ActiveQueue.Count != 0 && WorkQueue.Count != 0)
+                    {
+                        UpdateTitle();
+                        Thread.Sleep(10);
+                    }
+
+                    break;
                 }
+                case Program.Method.Synchronise:
+                    break;
+                default:
+                    throw new ArgumentOutOfRangeException();
             }
+
             isDoneConvert = true;
         }
 
@@ -119,6 +135,7 @@ namespace ArmaImageIndex
                         {
                             WorkQueue.Enqueue(data);
                         }
+
                         break;
                     default:
                         ProcessPAAConvert(data);
@@ -199,7 +216,8 @@ namespace ArmaImageIndex
                                 " In Queue: " + InQueue +
                                 " Done: " + done +
                                 " Running Tasks: " + runningTasks +
-                                " Already Finished: " + alreadyFound; ;
+                                " Already Finished: " + alreadyFound;
+                ;
             }
             else
             {
@@ -214,19 +232,18 @@ namespace ArmaImageIndex
 
         private static void ProcessPAAConvert(object input)
         {
-
             runningTasks++;
             UpdateTitle();
 
-            WorkTask data = (WorkTask)input;
+            WorkTask data = (WorkTask) input;
             string filePath = data.inputPath;
             Program.LOG("Process File: " + filePath);
             //get raw pixel color data in ARGB32 format
             string ext = Path.GetExtension(filePath);
 
-            bool isPAC = ext != null && ext.Equals(".pac", StringComparison.OrdinalIgnoreCase);
+            bool isPac = ext != null && ext.Equals(".pac", StringComparison.OrdinalIgnoreCase);
             FileStream paaStream = File.OpenRead(filePath);
-            PAA paa = new PAA(paaStream, isPAC);
+            PAA paa = new PAA(paaStream, isPac);
             byte[] pixels = PAA.GetARGB32PixelData(paa, paaStream);
             //We use WPF stuff here to create the actual image file, so this is Windows only
 
@@ -246,11 +263,11 @@ namespace ArmaImageIndex
             int size = GetPreviewSize(data.outputPath);
             int originalWidth = paa.Width;
             int originalHeight = paa.Height;
-            float percentWidth = size / (float)originalWidth;
-            float percentHeight = size / (float)originalHeight;
+            float percentWidth = size / (float) originalWidth;
+            float percentHeight = size / (float) originalHeight;
             float percent = percentHeight < percentWidth ? percentHeight : percentWidth;
-            int width = (int)(originalWidth * percent);
-            int height = (int)(originalHeight * percent);
+            int width = (int) (originalWidth * percent);
+            int height = (int) (originalHeight * percent);
 
             FileStream pngStreamPreview = File.OpenWrite(data.previewOutputPath);
             PngBitmapEncoder pngEncoderPreview = new PngBitmapEncoder();
@@ -289,16 +306,16 @@ namespace ArmaImageIndex
                 }
 
                 Parallel.ForEach(ActiveQueue, ProcessPAAConvert);
-                
+
                 ActiveQueue.Clear();
-                
+
                 GC.Collect();
 
                 Thread.Sleep(10);
             }
         }
 
-        private static BitmapFrame FastResize(BitmapFrame bfPhoto, int nWidth, int nHeight)
+        private static BitmapFrame FastResize(BitmapSource bfPhoto, int nWidth, int nHeight)
         {
             TransformedBitmap tbBitmap = new TransformedBitmap(bfPhoto,
                 new ScaleTransform(nWidth / bfPhoto.Width, nHeight / bfPhoto.Height, 0, 0));

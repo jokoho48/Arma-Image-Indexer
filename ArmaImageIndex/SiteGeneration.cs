@@ -1,20 +1,21 @@
-﻿using System;
+﻿#region
+
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
+
+#endregion
 
 namespace ArmaImageIndex
 {
     public static class SiteGeneration
     {
-
         internal static void StartGeneration(string outputDir)
         {
             using (StreamWriter output = new StreamWriter(Path.Combine(outputDir, "index.html")))
             {
-                output.WriteLine("<html><head><title>Arma 3 Image Index</title><link rel=\"stylesheet\" type=\"text/css\" href=\"sty.css\"></head></body bg>");
+                output.WriteLine(
+                    "<html><head><title>Arma 3 Image Index</title><link rel=\"stylesheet\" type=\"text/css\" href=\"sty.css\"></head></body bg>");
 
                 CheckSubDirs(outputDir, output);
             }
@@ -48,7 +49,7 @@ namespace ArmaImageIndex
             foreach (string file in files)
             {
                 if (Path.GetFileName(file).EndsWith("_preview.png")) continue;
-                
+
                 string filePNGPreview = file.Replace(".", "_preview.");
                 output.WriteLine(
                     $"<a href=\"{file.Replace(Program.outputDir + "\\", "")}\"> <img title= \"{file.Remove(0, 2)}\" src=\" {filePNGPreview.Replace(Program.outputDir + "\\", "")} \"></a>\n"

@@ -7,13 +7,11 @@ using System.IO;
 
 namespace ArmaImageIndex
 {
-
-
     internal static class Program
     {
         internal static string baseDir = "P://a3";
         internal static string outputDir = Environment.CurrentDirectory;
-        
+
         internal static Method processingMethod = Method.Parallel;
         private static readonly object LogThreadMutex = new object();
 
@@ -28,12 +26,12 @@ namespace ArmaImageIndex
                     continue;
                 }
 
-                if (arg.StartsWith("-o="))
+                else if (arg.StartsWith("-o="))
                 {
                     outputDir = arg.TrimStart("-o=".ToCharArray());
                 }
 
-                if (arg.StartsWith("-method="))
+                else if (arg.StartsWith("-method="))
                 {
                     switch (arg.TrimStart("-method=".ToCharArray()).ToLower())
                     {
@@ -56,9 +54,9 @@ namespace ArmaImageIndex
                     }
                 }
             }
+
             ImageProcessing.StartConverting();
         }
-
 
 
         internal static void LOG(string log)
@@ -79,7 +77,5 @@ namespace ArmaImageIndex
             ThreadPool,
             Synchronise
         }
-
-
     }
 }
