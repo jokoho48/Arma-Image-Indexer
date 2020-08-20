@@ -4,6 +4,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Runtime.InteropServices;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Windows.Media;
@@ -39,40 +40,67 @@ namespace ArmaImageIndex
         internal static int alreadyFound;
         private static bool isDoneDir;
         private static bool isDoneConvert;
+        private static readonly object DataLock = new object();
+
+        internal static void Worker()
+        {
+            while (true)
+            {
+                object Task = null;
+                lock (WorkQueue)
+                    if (WorkQueue.Count != 0)
+                        Task = WorkQueue.Dequeue();
+                if (Task != null)
+                    ProcessPAAConvert(Task);
+                else
+                    Thread.Sleep(100);
+            }
+        }
 
         internal static void StartConverting()
         {
+            if (Program.processingMethod == Program.Method.Thread)
+            {
+                for (int i = 0; i < Program.Threads; i++)
+                {
+                    Thread t = new Thread(Worker);
+                    t.Start();
+                }
+            }
             CheckSubDirs(Program.baseDir);
             isDoneDir = true;
             switch (Program.processingMethod)
             {
                 case Program.Method.ThreadPool:
-                {
-                    while (done != InQueue)
                     {
-                        UpdateTitle();
-                        Thread.Sleep(10);
-                    }
+                        while (done + alreadyFound != InQueue)
+                        {
+                            UpdateTitle();
+                            Thread.Sleep(10);
+                        }
 
-                    break;
-                }
-                case Program.Method.Parallel:
-                {
-                    while (ActiveQueue.Count != 0 && WorkQueue.Count != 0)
+                        break;
+                    }
+                case Program.Method.Thread:
                     {
-                        UpdateTitle();
-                        Thread.Sleep(10);
-                    }
+                        while (ActiveQueue.Count != 0 && WorkQueue.Count != 0)
+                        {
+                            UpdateTitle();
+                            Thread.Sleep(10);
+                        }
 
-                    break;
-                }
+                        break;
+                    }
                 case Program.Method.Synchronise:
+                    break;
+                case Program.Method.Parallel:
                     break;
                 default:
                     throw new ArgumentOutOfRangeException();
             }
 
             isDoneConvert = true;
+            SiteGeneration.StartGeneration(Program.outputDir);
         }
 
         private static void CheckSubDirs(string path)
@@ -81,16 +109,58 @@ namespace ArmaImageIndex
             Program.LOG("Folder Found: " + path);
             List<string> folders = Directory.GetDirectories(path, "*", SearchOption.TopDirectoryOnly).ToList();
             folders.Sort();
-            foreach (string folder in folders)
+            if (Program.processingMethod == Program.Method.Parallel) {
+                Parallel.ForEach(folders, (folder) => {
+                    if (!Program.IsIgnoredFolder(folder)) return;
+                    CheckSubDirs(folder);
+                });
+            } else
             {
-                CheckSubDirs(folder);
-                if (Program.processingMethod == Program.Method.ThreadPool)
+                foreach (string folder in folders)
                 {
-                    Thread.Sleep(1);
+                    if (!Program.IsIgnoredFolder(folder)) continue;
+                    CheckSubDirs(folder);
                 }
             }
         }
+        private static void PrepareProcessing(string file)
+        {
+            string newFile = file.Replace(Program.baseDir, Program.outputDir);
+            string filePNG = newFile.Replace(".paa", ".png");
+            filePNG = filePNG.Replace(".pac", ".png");
+            filePNG = filePNG.Replace(Program.baseDir, "");
+            string filePNGPreview = newFile.Replace(".paa", "_preview.png");
+            filePNGPreview = filePNGPreview.Replace(".pac", "_preview.png");
 
+            filePNGPreview = filePNGPreview.Replace(Program.baseDir, "");
+
+            Directory.CreateDirectory(Path.GetDirectoryName(filePNG) ?? throw new FileNotFoundException());
+
+            if (File.Exists(filePNG))
+            {
+                alreadyFound++;
+                return;
+            }
+
+            Program.LOG("File Found: " + file);
+
+            WorkTask data = new WorkTask(file, filePNG, filePNGPreview);
+
+            InQueue++;
+            switch (Program.processingMethod)
+            {
+                case Program.Method.ThreadPool:
+                    ThreadPool.QueueUserWorkItem(ProcessPAAConvert, data);
+                    break;
+                case Program.Method.Thread:
+                    lock (WorkQueue)
+                        WorkQueue.Enqueue(data);
+                    break;
+                default:
+                    ProcessPAAConvert(data);
+                    break;
+            }
+        }
         private static void ScanImagesFiles(string path)
         {
             UpdateTitle();
@@ -103,101 +173,17 @@ namespace ArmaImageIndex
 
             files.Sort();
 
-            foreach (string file in files)
+            if (Program.processingMethod == Program.Method.Parallel)
             {
-                string newFile = file.Replace(Program.baseDir, "");
-                newFile = Path.Combine(Program.outputDir, newFile);
-                string filePNG = newFile.Replace("paa", "png");
-                filePNG = filePNG.Replace(Program.baseDir, "");
-                string filePNGPreview = newFile.Replace(".paa", "_preview.png");
-                filePNGPreview = filePNGPreview.Replace(Program.baseDir, "");
-
-                Directory.CreateDirectory(Path.GetDirectoryName(filePNG) ?? throw new FileNotFoundException());
-
-                if (File.Exists(filePNG))
+                Parallel.ForEach(files, (file) => { PrepareProcessing(file); });
+            } else
+            {
+                foreach (string file in files)
                 {
-                    alreadyFound++;
-                    continue;
-                }
-
-                Program.LOG("File Found: " + file);
-
-                WorkTask data = new WorkTask(file, filePNG, filePNGPreview);
-
-                InQueue++;
-                switch (Program.processingMethod)
-                {
-                    case Program.Method.ThreadPool:
-                        ThreadPool.QueueUserWorkItem(ProcessPAAConvert, data);
-                        break;
-                    case Program.Method.Parallel:
-                        lock (WorkQueue)
-                        {
-                            WorkQueue.Enqueue(data);
-                        }
-
-                        break;
-                    default:
-                        ProcessPAAConvert(data);
-                        break;
+                    PrepareProcessing(file);
                 }
             }
-        }
-
-        private static int GetPreviewSize(string path)
-        {
-            string name = Path.GetFileNameWithoutExtension(path)?.ToLower() ?? throw new FileNotFoundException();
-            if (
-                name.EndsWith("_smdi")
-                || name.EndsWith("_sdmi") // because BI fucking miss spells shit
-                || name.EndsWith("_nohq")
-                || name.EndsWith("_adshq")
-                || name.EndsWith("_ads")
-                || name.EndsWith("_as")
-                || name.EndsWith("_mc")
-                || name.EndsWith("_ti_ca")
-                || name.EndsWith("_mask")
-                || name.EndsWith("_dtsmdi")
-                || name.EndsWith("_dt")
-                || name.EndsWith("_sm")
-                || name.EndsWith("_mca")
-                || name.EndsWith("_nofhq")
-                || name.EndsWith("_dxt5")
-                || name.EndsWith("_sdm")
-                || name.EndsWith("_dxt1")
-                || name.StartsWith("surface_")
-                || name.EndsWith("_4444")
-                || name.EndsWith("_nopx")
-                || name.EndsWith("_gs")
-                || name.EndsWith("_mco")
-                || name.EndsWith("_gs")
-                || name.EndsWith("_4x4")
-                || name.EndsWith("_detail")
-                || name.EndsWith("_mlod")
-                || name.EndsWith("_ti")
-                || name.EndsWith("hohq")
-            )
-            {
-                return 32;
-            }
-
-            if (name.EndsWith("_lca") || name.EndsWith("_lco") || name.EndsWith("_no"))
-            {
-                return 16;
-            }
-
-            if (name.EndsWith("_co"))
-            {
-                return 64;
-            }
-
-            if (name.EndsWith("_ca") || name.EndsWith("_sky"))
-            {
-                return 128;
-            }
-
-            Program.LOG("File Format not Found Using Default: " + name + " Path: " + path);
-            return 128;
+            
         }
 
         private static void UpdateTitle()
@@ -217,7 +203,6 @@ namespace ArmaImageIndex
                                 " Done: " + done +
                                 " Running Tasks: " + runningTasks +
                                 " Already Finished: " + alreadyFound;
-                ;
             }
             else
             {
@@ -228,97 +213,92 @@ namespace ArmaImageIndex
                                 " Running Tasks: " + runningTasks +
                                 " Already Finished: " + alreadyFound;
             }
+
         }
 
         private static void ProcessPAAConvert(object input)
         {
-            runningTasks++;
-            UpdateTitle();
-
-            WorkTask data = (WorkTask) input;
-            string filePath = data.inputPath;
-            Program.LOG("Process File: " + filePath);
-            //get raw pixel color data in ARGB32 format
-            string ext = Path.GetExtension(filePath);
-
-            bool isPac = ext != null && ext.Equals(".pac", StringComparison.OrdinalIgnoreCase);
-            FileStream paaStream = File.OpenRead(filePath);
-            PAA paa = new PAA(paaStream, isPac);
-            byte[] pixels = PAA.GetARGB32PixelData(paa, paaStream);
-            //We use WPF stuff here to create the actual image file, so this is Windows only
-
-            //create a BitmapSource
-            List<Color> colors = paa.Palette.Colors.Select(c => Color.FromRgb(c.R8, c.G8, c.B8)).ToList();
-            BitmapPalette bitmapPalette = colors.Count > 0 ? new BitmapPalette(colors) : null;
-
-            BitmapSource bms = BitmapSource.Create(paa.Width, paa.Height, 300, 300, PixelFormats.Bgra32, bitmapPalette,
-                pixels, paa.Width * 4);
-
-            //save as png
-            FileStream pngStream = File.OpenWrite(data.outputPath);
-            PngBitmapEncoder pngEncoder = new PngBitmapEncoder();
-            pngEncoder.Frames.Add(BitmapFrame.Create(bms));
-            pngEncoder.Save(pngStream);
-
-            int size = GetPreviewSize(data.outputPath);
-            int originalWidth = paa.Width;
-            int originalHeight = paa.Height;
-            float percentWidth = size / (float) originalWidth;
-            float percentHeight = size / (float) originalHeight;
-            float percent = percentHeight < percentWidth ? percentHeight : percentWidth;
-            int width = (int) (originalWidth * percent);
-            int height = (int) (originalHeight * percent);
-
-            FileStream pngStreamPreview = File.OpenWrite(data.previewOutputPath);
-            PngBitmapEncoder pngEncoderPreview = new PngBitmapEncoder();
-            BitmapFrame bmf = BitmapFrame.Create(bms);
-
-            if (height != bms.PixelHeight && width != bms.PixelWidth)
+            try
             {
-                bmf = FastResize(bmf, width, height);
-            }
-
-            pngEncoderPreview.Frames.Add(bmf);
-            pngEncoderPreview.Save(pngStreamPreview);
-
-            // Memory Cleanup
-            paaStream.Dispose();
-            pngStream.Dispose();
-            pngStreamPreview.Dispose();
-            GC.Collect();
-
-            done++;
-            runningTasks--;
-            UpdateTitle();
-            Program.LOG("Processing Done: " + filePath);
-        }
-
-        private static void WorkerThread()
-        {
-            while (true)
-            {
-                if (WorkQueue.Count == 0) continue;
-
-                lock (WorkQueue)
+                lock (DataLock)
                 {
-                    ActiveQueue.AddRange(WorkQueue);
-                    WorkQueue.Clear();
+                    runningTasks++;
+                    UpdateTitle();
                 }
 
-                Parallel.ForEach(ActiveQueue, ProcessPAAConvert);
+                WorkTask data = (WorkTask)input;
+                string filePath = data.inputPath;
+                Program.LOG("Process File: " + filePath);
+                //get raw pixel color data in ARGB32 format
+                string ext = Path.GetExtension(filePath);
 
-                ActiveQueue.Clear();
+                bool isPac = ext != null && ext.Equals(".pac", StringComparison.OrdinalIgnoreCase);
 
+                using (FileStream paaStream = File.OpenRead(filePath))
+                {
+                    PAA paa = new PAA(paaStream, isPac);
+                    byte[] pixels = PAA.GetARGB32PixelData(paa, paaStream);
+                    //create a BitmapSource
+                    List<Color> colors = paa.Palette.Colors.Select(c => Color.FromArgb(c.A8, c.R8, c.G8, c.B8)).ToList();
+                    BitmapPalette bitmapPalette = colors.Count > 0 ? new BitmapPalette(colors) : null;
+                    BitmapSource bms = BitmapSource.Create(paa.Width, paa.Height, 300, 300, PixelFormats.Bgra32, bitmapPalette,
+                        pixels, paa.Width * 4);
+                    using (FileStream pngStream = File.OpenWrite(data.outputPath))
+                    {
+                        PngBitmapEncoder pngEncoder = new PngBitmapEncoder();
+
+                        BitmapFrame bmf = BitmapFrame.Create(bms);
+
+                        int size = 256;
+                        float percentWidth = Math.Min(size / (float)bmf.PixelWidth, 1);
+                        float percentHeight = Math.Min(size / (float)bmf.PixelHeight, 1);
+                        float percent = percentHeight < percentWidth ? percentHeight : percentWidth;
+                        if (bmf.PixelWidth > size || bmf.PixelHeight > size)
+                        {
+                            bmf = FastResize(bmf, percent, percent);
+                        }
+                        pngEncoder.Frames.Add(bmf);
+                        pngEncoder.Save(pngStream);
+
+                        size = 64;
+                        percentWidth = Math.Min(size / (float)bmf.PixelWidth, 1);
+                        percentHeight = Math.Min(size / (float)bmf.PixelHeight, 1);
+                        percent = percentHeight < percentWidth ? percentHeight : percentWidth;
+                        if (bmf.PixelWidth > size || bmf.PixelHeight > size)
+                        {
+                            using (FileStream pngStreamPreview = File.OpenWrite(data.previewOutputPath))
+                            {
+
+                                PngBitmapEncoder pngEncoderPreview = new PngBitmapEncoder();
+                                bmf = FastResize(bmf, percent, percent);
+                                pngEncoderPreview.Frames.Add(bmf);
+                                pngEncoderPreview.Save(pngStreamPreview);
+                            }
+                        }
+                    }
+                }
+                // Memory Cleanup
+                Program.LOG("Processing Done: " + filePath);
+            }
+            catch (Exception)
+            {
+            }
+            finally
+            {
+                lock (DataLock)
+                {
+                    done++;
+                    runningTasks--;
+                    UpdateTitle();
+                }
                 GC.Collect();
-
-                Thread.Sleep(10);
             }
         }
 
-        private static BitmapFrame FastResize(BitmapSource bfPhoto, int nWidth, int nHeight)
+        private static BitmapFrame FastResize(BitmapSource bfPhoto, float nWidth, float nHeight)
         {
             TransformedBitmap tbBitmap = new TransformedBitmap(bfPhoto,
-                new ScaleTransform(nWidth / bfPhoto.Width, nHeight / bfPhoto.Height, 0, 0));
+                new ScaleTransform(nWidth, nHeight));
             return BitmapFrame.Create(tbBitmap);
         }
 

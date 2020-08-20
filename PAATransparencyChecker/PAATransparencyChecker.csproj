@@ -85,10 +85,6 @@
       <Project>{6b9219c3-42a6-4715-8f1d-40d49e094ea8}</Project>
       <Name>BIS.WRP</Name>
     </ProjectReference>
-    <ProjectReference Include="..\SwiftPbo\SwiftPbo\SwiftPbo.csproj">
-      <Project>{8688a0f5-a404-4707-b98b-563213964e72}</Project>
-      <Name>SwiftPbo</Name>
-    </ProjectReference>
   </ItemGroup>
   <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
   <Target Name="EnsureNuGetPackageBuildImports" BeforeTargets="PrepareForBuild">

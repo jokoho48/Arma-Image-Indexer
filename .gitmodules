@@ -2,10 +2,3 @@
 	path = bis-file-formats
 	url = https://github.com/jokoho48/bis-file-formats.git
 	branch = ImplementSpan
-[submodule "SwiftPbo"]
-	path = SwiftPbo
-	url = https://github.com/jokoho48/SwiftPbo.git
-	branch = master
-[submodule "ImageSharp"]
-	path = ImageSharp
-	url = https://github.com/SixLabors/ImageSharp.git

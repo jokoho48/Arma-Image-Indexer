@@ -15,7 +15,7 @@ namespace PAATransparencyChecker
         private static readonly string baseDir = "P://a3";
         private static readonly Dictionary<string, bool> types = new Dictionary<string, bool>();
 
-        private static void Main(string[] args)
+        private static void Main()
         {
             CheckSubDirs(baseDir);
         }
