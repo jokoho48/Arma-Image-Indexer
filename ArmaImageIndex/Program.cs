@@ -15,7 +15,7 @@ namespace ArmaImageIndex
         internal static List<string> includeDir = new List<string>();
         internal static Method processingMethod = Method.Parallel;
         private static readonly object LogThreadMutex = new object();
-        internal static int Threads = 128; //Environment.ProcessorCount;
+        internal static int Threads = Environment.ProcessorCount;
 
         [STAThread]
         private static void Main(string[] args)

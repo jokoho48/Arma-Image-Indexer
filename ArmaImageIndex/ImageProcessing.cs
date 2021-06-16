@@ -138,7 +138,8 @@ namespace ArmaImageIndex
 
             if (File.Exists(filePNG))
             {
-                alreadyFound++;
+                lock(DataLock)
+                    alreadyFound++;
                 return;
             }
 
@@ -146,7 +147,9 @@ namespace ArmaImageIndex
 
             WorkTask data = new WorkTask(file, filePNG, filePNGPreview);
 
-            InQueue++;
+            lock (DataLock) {
+                InQueue++;
+            }
             switch (Program.processingMethod)
             {
                 case Program.Method.ThreadPool:
